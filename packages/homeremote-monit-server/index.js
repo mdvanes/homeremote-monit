@@ -2,6 +2,7 @@
 /* eslint-env node */
 
 const { httpGetPromise } = require('./httpGetPromise');
+const parseString = require('xml2js').parseString;
 
 const bind = (app, log) => {
   // api?mode=queue&output=json&apikey=3
@@ -53,6 +54,14 @@ const bind = (app, log) => {
   });
 };
 
+const translateMonitObject = monitObj => ({
+  // TODO reduce [0] and reduce multiple filters/selections on .server and .service
+  name: monitObj.monit.server[0].localhostname[0],
+  ip: monitObj.monit.server[0].httpd[0].address[0],
+  status: monitObj.monit.service.filter(service => service.$.type === '5')[0].status[0] === '0' ? "OK" : "NOK",
+  cpu: parseFloat(monitObj.monit.service.filter(service => service.$.type === '5')[0].system[0].cpu[0].system[0])
+});
+
 const getStatus = (res, log) => {
   log.info('Call to /monit/status');
 
@@ -62,8 +71,14 @@ const getStatus = (res, log) => {
   const url = 'http://192.168.0.8:2812/_status?format=xml';
   httpGetPromise(url)
     .then(data => {
-      console.log(data);
-      res.send({status: 'ok', list: ''});
+      // console.log(data);
+      const xml = data;
+      parseString(xml, (err, result) => {
+        // console.dir(result);
+        // console.dir(translateMonitObject(result));
+        const translated = translateMonitObject(result);
+        res.send({status: 'ok', list: [translated]});
+      });
       // if(data.queue) {
       //     return data.queue.slots.map( entry => {
       //         return {
