@@ -8,7 +8,7 @@ const httpGetPromise = url => {
       const statusCode = res.statusCode;
       const contentType = res.headers['content-type'];
 
-      console.log(res);
+      // console.log(res);
 
       let error;
       if (statusCode !== 200) {
