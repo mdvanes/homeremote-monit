@@ -4,54 +4,27 @@
 const { httpGetPromise } = require('./httpGetPromise');
 const parseString = require('xml2js').parseString;
 
-const bind = (app, log) => {
-  // api?mode=queue&output=json&apikey=3
-  //
-  // queue.slots[0].filename
-  // queue.slots[0].percentage
-
-  // api?mode=history&output=json&apikey=3
-  //
-  // history.slots[0].name
-  // history.slots[0].status
+const bind = (app, settings, log) => {
 
   app.get('/monit/status', require('connect-ensure-login').ensureLoggedIn(), function (req, res) {
-    getStatus(res);
+    getStatus(res, settings);
 
-    // const promiseArr = [];
-
-    // if(settings.gears.sn) {
-    //     const sbQueueUri = `${settings.gears.sn.uri}sabnzbd/api?mode=queue&output=json&apikey=${settings.gears.sn.apikey}`;
-    //     const sbHistoryUri = `${settings.gears.sn.uri}sabnzbd/api?mode=history&output=json&apikey=${settings.gears.sn.apikey}`;
-    //     promiseArr.push(sbQueuePromise(sbQueueUri));
-    //     promiseArr.push(sbHistoryPromise(sbHistoryUri));
-    // }
-    //
-    // if(settings.gears.tr) {
-    //     const transmission = new Transmission({
-    //         host: settings.gears.tr.host,
-    //         port: settings.gears.tr.port,
-    //         username: settings.gears.tr.user,
-    //         password: settings.gears.tr.password
-    //     });
-    //     promiseArr.push(transmissionPromise(transmission));
-    // }
-    //
-    // // Combine all calls with Promise.all(iterable);
-    // Promise.all(promiseArr)
-    // .then(data => {
-    //     return data.reduce((aList, otherList) => {
-    //         return aList.concat(otherList);
-    //     });
-    // })
-    // .then(data => {
-    //     res.send({status: 'ok', list: data});
-    // })
-    // .catch(err => {
-    //     log.error(err);
-    //     res.send({status: 'error'});
-    // });
   });
+};
+
+const createMonitPromise = (monitSettings) => {
+  const { monitUser, monitPass, ...otherSettings } = monitSettings;
+  if(monitUser && monitPass) {
+    const encodedAuthHeader = Buffer.from(`${monitUser}:${monitPass}`).toString('base64');
+    otherSettings.headers = {'Authorization': `Basic ${encodedAuthHeader}`};
+  }
+  // const encodedAuthHeader = Buffer.from(`${monitUser}:${monitPass}`).toString('base64');
+  // const newMonitSettings = {
+  //   headers: {'Authorization': `Basic ${encodedAuthHeader}`},
+  //   ...otherSettings
+  // };
+
+  return httpGetPromise(otherSettings);
 };
 
 const translateMonitObject = monitObj => ({
@@ -62,39 +35,55 @@ const translateMonitObject = monitObj => ({
   cpu: parseFloat(monitObj.monit.service.filter(service => service.$.type === '5')[0].system[0].cpu[0].system[0])
 });
 
-const getStatus = (res, log) => {
+const getStatus = (res, settings, log) => {
   log.info('Call to /monit/status');
 
-  // example: http://192.168.0.8:2812/_status?format=xml
-
   // TODO aggregate over multiple monit instances
-  const url = 'http://192.168.0.8:2812/_status?format=xml';
-  httpGetPromise(url)
-    .then(data => {
-      // console.log(data);
-      const xml = data;
-      parseString(xml, (err, result) => {
-        // console.dir(result);
-        // console.dir(translateMonitObject(result));
-        const translated = translateMonitObject(result);
-        res.send({status: 'ok', list: [translated]});
-      });
-      // if(data.queue) {
-      //     return data.queue.slots.map( entry => {
-      //         return {
-      //             type: 'sbq',
-      //             name: entry.filename,
-      //             percentage: entry.percentage,
-      //             status: entry.status
-      //         };
-      //     });
-      // } else {
-      //     return data;
-      // }
-    }).catch(err => {
-    log.error(err);
-    res.send({status: 'error'});
-  });
+  if(!settings.monit || settings.monit.length === 0) {
+    res.send({status: 'error', message: 'no Monit settings found'});
+    return;
+  }
+
+  const promises = settings.monit.map(monitSettings => createMonitPromise(monitSettings));
+
+  // createMonitPromise(settings.monit[0])
+  Promise.all(promises)
+    .then(xmlResponses => {
+      // TODO convert each xmlResponse to JSON, but parseString returns a promise and should use resolve to trigger a second "then"
+      return Promise.all(xmlResponses.map(xmlResponse => new Promise((resolve) => parseString(xmlResponse, (err, result) => resolve(result)))));
+      // return Promise.all(xmlResponses.map(xmlResponse => parseString(xmlResponse, (err, result) => console.log(result))));
+    })
+    .then(jsonResponses => {
+      const translated = jsonResponses.map(jsonResponse => translateMonitObject(jsonResponse));
+      res.send({status: 'ok', list: [translated]});
+    })
+    // .then(x => console.dir(x))
+    // .then(xmlResponses => {
+    //   //console.dir(xmlData)
+    //   // xmlResponses.map(xmlResponse => )
+    //   parseString(xmlResponses[0], (err, result) => {
+    //     // console.dir(result);
+    //     // console.dir(translateMonitObject(result));
+    //     const translated = translateMonitObject(result);
+    //     res.send({status: 'ok', list: [translated]});
+    //   });
+    //   // if(data.queue) {
+    //   //     return data.queue.slots.map( entry => {
+    //   //         return {
+    //   //             type: 'sbq',
+    //   //             name: entry.filename,
+    //   //             percentage: entry.percentage,
+    //   //             status: entry.status
+    //   //         };
+    //   //     });
+    //   // } else {
+    //   //     return data;
+    //   // }
+    // })
+    .catch(err => {
+      log.error(err);
+      res.send({status: 'error'});
+    });
 };
 
 module.exports = { bind, getStatus };
