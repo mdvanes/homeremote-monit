@@ -1,10 +1,9 @@
 const http = require('http');
 
-const httpGetPromise = url => {
+const httpGetPromise = urlObj => {
   const expectedContentType = 'xml';
   return new Promise((resolve, reject) => {
-//        http.get({ url, headers: {'Authorization': 'Basic YWRtaW46YWRtaW4='} }, (res) => {
-    http.get({ host: '192.168.0.8', port: '2812', path: '/_status?format=xml', headers: {'Authorization': 'Basic YWRtaW46bW9uaXQ='} }, (res) => {
+    http.get(urlObj, (res) => {
       const statusCode = res.statusCode;
       const contentType = res.headers['content-type'];
 
@@ -13,7 +12,7 @@ const httpGetPromise = url => {
       let error;
       if (statusCode !== 200) {
         error = new Error(`Request Failed.\n
-                    Status Code: ${statusCode}`);
+                    Status Code: ${statusCode} ${statusCode === 401 ? 'Probably the supplied Monit username or password is wrong' : ''}`);
       } else if (expectedContentType === 'xml' && contentType !== 'text/xml') {
         error = new Error(`Invalid content-type.\n
                     Expected text/xml but received ${contentType}`);

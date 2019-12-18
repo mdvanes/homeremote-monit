@@ -7,5 +7,8 @@
     "test": "node test.js"
   },
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "xml2js": "^0.4.22"
+  }
 }
